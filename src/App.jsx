@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import './App.css'
 import SleepCheckin from './SleepCheckin'
+import Onboarding from './Onboarding'
 
 const getScoreColor = (score) => {
   if (score >= 75) return '#22c55e'
@@ -16,10 +17,10 @@ function ScoreCircle({ score }) {
   const color = getScoreColor(score)
   return (
     <svg width="180" height="180" viewBox="0 0 180 180">
-      <circle cx="90" cy="90" r={radius} fill="none" stroke="#2a2a2a" strokeWidth="12"/>
+      <circle cx="90" cy="90" r={radius} fill="none" stroke="#2a2a2a" strokeWidth="12" />
       <circle cx="90" cy="90" r={radius} fill="none" stroke={color} strokeWidth="12"
         strokeLinecap="round" strokeDasharray={circumference} strokeDashoffset={offset}
-        transform="rotate(-90 90 90)" style={{ transition: 'stroke-dashoffset 1s ease' }}/>
+        transform="rotate(-90 90 90)" style={{ transition: 'stroke-dashoffset 1s ease' }} />
       <text x="90" y="82" textAnchor="middle" fill="white" fontSize="36" fontWeight="700">{score}</text>
       <text x="90" y="106" textAnchor="middle" fill="#666" fontSize="13">sur 100</text>
     </svg>
@@ -44,11 +45,11 @@ function PriorityCard({ priority, onToggle }) {
           {priority.done && <span style={{ color: 'white', fontSize: '12px' }}>✓</span>}
         </div>
         <div style={{ flex: 1 }}>
-          <p style={{ margin: 0, fontSize: '14px', fontWeight: '600',
+          <p style={{
+            margin: 0, fontSize: '14px', fontWeight: '600',
             color: priority.done ? '#555' : 'white',
-            textDecoration: priority.done ? 'line-through' : 'none' }}>
-            {priority.title}
-          </p>
+            textDecoration: priority.done ? 'line-through' : 'none'
+          }}>{priority.title}</p>
           <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#666' }}>→ {priority.reason}</p>
         </div>
         <span style={{ fontSize: '11px', padding: '3px 10px', borderRadius: '20px', background: '#2a2a2a', color: '#777', flexShrink: 0 }}>
@@ -74,11 +75,6 @@ function ModuleCard({ module, onClick }) {
   )
 }
 
-const initialPriorities = [
-  { id: 1, title: "Couche-toi avant 22h30 ce soir", reason: "4 nuits à moins de 6h cette semaine", pillar: "Sommeil", done: false },
-  { id: 2, title: "Pause déjeuner sans écran", reason: "Ton stress est en hausse depuis 5 jours", pillar: "Mental", done: false }
-]
-
 const calcSleepScore = (duration, quality) => {
   const d = Math.min(duration / 480, 1.0) * 0.6
   const q = (quality / 4) * 0.4
@@ -88,31 +84,32 @@ const calcSleepScore = (duration, quality) => {
 const minutesToDuration = (minutes) => {
   const h = Math.floor(minutes / 60)
   const m = minutes % 60
-  return m === 0 ? `${h}h` : `${h}h${String(m).padStart(2,'0')}`
+  return m === 0 ? `${h}h` : `${h}h${String(m).padStart(2, '0')}`
 }
 
+const initialPriorities = [
+  { id: 1, title: "Couche-toi avant 22h30 ce soir", reason: "4 nuits à moins de 6h cette semaine", pillar: "Sommeil", done: false },
+  { id: 2, title: "Pause déjeuner sans écran", reason: "Ton stress est en hausse depuis 5 jours", pillar: "Mental", done: false }
+]
+
 export default function App() {
-  const [priorities, setPriorities] = useState(initialPriorities)
+  const [profile, setProfile] = useState(null)
+  const [loading, setLoading] = useState(true)
   const [showCheckin, setShowCheckin] = useState(false)
   const [sleepDone, setSleepDone] = useState(false)
   const [sleepScore, setSleepScore] = useState(48)
   const [sleepSummary, setSleepSummary] = useState(null)
+  const [priorities, setPriorities] = useState(initialPriorities)
 
-  const modules = [
-    { id: 1, name: "Santé", icon: "❤️", score: 72 },
-    { id: 2, name: "Sommeil", icon: "🌙", score: sleepScore },
-    { id: 3, name: "Finances", icon: "💰", score: 81 },
-    { id: 4, name: "Orga", icon: "📋", score: 65 },
-  ]
+  useEffect(() => {
+    const saved = localStorage.getItem('humanOS_profile')
+    if (saved) setProfile(JSON.parse(saved))
+    setLoading(false)
+  }, [])
 
-  const globalScore = Math.round((72 + sleepScore + 81 + 65) / 4)
-
-  const today = new Date().toLocaleDateString('fr-FR', {
-    weekday: 'long', day: 'numeric', month: 'long'
-  })
-
-  const togglePriority = (id) => {
-    setPriorities(prev => prev.map(p => p.id === id ? { ...p, done: !p.done } : p))
+  const handleOnboardingComplete = (data) => {
+    localStorage.setItem('humanOS_profile', JSON.stringify(data))
+    setProfile(data)
   }
 
   const handleSleepComplete = (data) => {
@@ -122,15 +119,31 @@ export default function App() {
     setShowCheckin(false)
   }
 
+  const togglePriority = (id) => {
+    setPriorities(prev => prev.map(p => p.id === id ? { ...p, done: !p.done } : p))
+  }
+
+  if (loading) return <div style={{ minHeight: '100vh', background: '#0a0a0a' }} />
+  if (!profile) return <Onboarding onComplete={handleOnboardingComplete} />
+
+  const healthScore = profile.healthScore || 72
+  const modules = [
+    { id: 1, name: "Santé", icon: "❤️", score: healthScore },
+    { id: 2, name: "Sommeil", icon: "🌙", score: sleepScore },
+    { id: 3, name: "Finances", icon: "💰", score: 81 },
+    { id: 4, name: "Orga", icon: "📋", score: 65 },
+  ]
+  const globalScore = Math.round((healthScore + sleepScore + 81 + 65) / 4)
+  const today = new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })
+
   return (
     <div style={{ minHeight: '100vh', background: '#0a0a0a', color: 'white' }}>
       {showCheckin && <SleepCheckin onComplete={handleSleepComplete} onClose={() => setShowCheckin(false)} />}
-
       <div style={{ maxWidth: '420px', margin: '0 auto', padding: '32px 20px' }}>
 
         <div style={{ marginBottom: '32px' }}>
           <p style={{ margin: 0, fontSize: '13px', color: '#555', textTransform: 'capitalize' }}>{today}</p>
-          <h1 style={{ margin: '4px 0 0', fontSize: '24px', fontWeight: '700' }}>Bonjour, Noé 👋</h1>
+          <h1 style={{ margin: '4px 0 0', fontSize: '24px', fontWeight: '700' }}>Bonjour, {profile.firstName} 👋</h1>
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: '36px' }}>
@@ -189,6 +202,10 @@ export default function App() {
           </div>
         </div>
 
+        <button onClick={() => { localStorage.removeItem('humanOS_profile'); setProfile(null) }}
+          style={{ marginTop: '40px', background: 'none', border: 'none', color: '#333', fontSize: '12px', cursor: 'pointer', width: '100%' }}>
+          Réinitialiser le profil
+        </button>
       </div>
     </div>
   )
