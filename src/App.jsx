@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import './App.css'
 import SleepCheckin from './SleepCheckin'
 import Onboarding from './Onboarding'
+import BloodTest from './BloodTest'
 
 const getScoreColor = (score) => {
   if (score >= 75) return '#22c55e'
@@ -66,7 +67,7 @@ function ModuleCard({ module, onClick }) {
     <div onClick={onClick} style={{
       background: '#1a1a1a', borderRadius: '16px', padding: '14px 8px',
       display: 'flex', flexDirection: 'column', alignItems: 'center',
-      cursor: 'pointer', gap: '4px'
+      cursor: onClick ? 'pointer' : 'default', gap: '4px'
     }}>
       <span style={{ fontSize: '22px' }}>{module.icon}</span>
       <span style={{ fontSize: '11px', color: '#666' }}>{module.name}</span>
@@ -96,9 +97,11 @@ export default function App() {
   const [profile, setProfile] = useState(null)
   const [loading, setLoading] = useState(true)
   const [showCheckin, setShowCheckin] = useState(false)
+  const [showBloodTest, setShowBloodTest] = useState(false)
   const [sleepDone, setSleepDone] = useState(false)
   const [sleepScore, setSleepScore] = useState(48)
   const [sleepSummary, setSleepSummary] = useState(null)
+  const [bloodScore, setBloodScore] = useState(null)
   const [priorities, setPriorities] = useState(initialPriorities)
 
   useEffect(() => {
@@ -126,7 +129,7 @@ export default function App() {
   if (loading) return <div style={{ minHeight: '100vh', background: '#0a0a0a' }} />
   if (!profile) return <Onboarding onComplete={handleOnboardingComplete} />
 
-  const healthScore = profile.healthScore || 72
+  const healthScore = bloodScore || profile.healthScore || 72
   const modules = [
     { id: 1, name: "Santé", icon: "❤️", score: healthScore },
     { id: 2, name: "Sommeil", icon: "🌙", score: sleepScore },
@@ -139,6 +142,16 @@ export default function App() {
   return (
     <div style={{ minHeight: '100vh', background: '#0a0a0a', color: 'white' }}>
       {showCheckin && <SleepCheckin onComplete={handleSleepComplete} onClose={() => setShowCheckin(false)} />}
+      {showBloodTest && (
+        <BloodTest
+          onClose={() => setShowBloodTest(false)}
+          onSave={(values, score) => {
+            if (score) setBloodScore(score)
+            setShowBloodTest(false)
+          }}
+        />
+      )}
+
       <div style={{ maxWidth: '420px', margin: '0 auto', padding: '32px 20px' }}>
 
         <div style={{ marginBottom: '32px' }}>
@@ -197,7 +210,13 @@ export default function App() {
           </p>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px' }}>
             {modules.map(m => (
-              <ModuleCard key={m.id} module={m} onClick={m.id === 2 ? () => setShowCheckin(true) : undefined} />
+              <ModuleCard
+                key={m.id} module={m}
+                onClick={
+                  m.id === 1 ? () => setShowBloodTest(true) :
+                  m.id === 2 ? () => setShowCheckin(true) : undefined
+                }
+              />
             ))}
           </div>
         </div>
@@ -206,6 +225,7 @@ export default function App() {
           style={{ marginTop: '40px', background: 'none', border: 'none', color: '#333', fontSize: '12px', cursor: 'pointer', width: '100%' }}>
           Réinitialiser le profil
         </button>
+
       </div>
     </div>
   )
