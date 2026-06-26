@@ -4,6 +4,7 @@ import SleepCheckin from './SleepCheckin'
 import Onboarding from './Onboarding'
 import BloodTest from './BloodTest'
 import FinanceModule from './FinanceModule'
+import { db } from './supabase'
 
 const getScoreColor = (score) => {
   if (score >= 75) return '#22c55e'
@@ -82,23 +83,46 @@ export default function App() {
   const [sleepScore, setSleepScore] = useState(48)
   const [sleepSummary, setSleepSummary] = useState(null)
   const [bloodScore, setBloodScore] = useState(null)
-  const [financeScore, setFinanceScore] = useState(81)
+  const [financeScore, setFinanceScore] = useState(65)
   const [financeData, setFinanceData] = useState(null)
   const [priorities, setPriorities] = useState(initialPriorities)
 
-  useEffect(()=>{
-    const saved = localStorage.getItem('humanOS_profile')
-    if (saved) setProfile(JSON.parse(saved))
-    setLoading(false)
-  },[])
+  useEffect(() => {
+    const init = async () => {
+      try {
+        const saved = await db.loadAllData()
+        if (saved.profile) {
+          setProfile(saved.profile)
+          if (saved.bloodScore) setBloodScore(saved.bloodScore)
+          if (saved.financeScore) setFinanceScore(saved.financeScore)
+          if (saved.financeData) setFinanceData(saved.financeData)
+          if (saved.lastSleep) {
+            setSleepScore(saved.lastSleep.score || 48)
+            setSleepDone(true)
+          }
+        } else {
+          const local = localStorage.getItem('humanOS_profile')
+          if (local) setProfile(JSON.parse(local))
+        }
+      } catch (e) {
+        const local = localStorage.getItem('humanOS_profile')
+        if (local) setProfile(JSON.parse(local))
+      }
+      setLoading(false)
+    }
+    init()
+  }, [])
 
-  const handleOnboardingComplete = (data) => {
-    localStorage.setItem('humanOS_profile',JSON.stringify(data))
+  const handleOnboardingComplete = async (data) => {
+    localStorage.setItem('humanOS_profile', JSON.stringify(data))
+    try { await db.saveProfile(data) } catch(e) { console.error(e) }
     setProfile(data)
   }
 
-  const handleSleepComplete = (data) => {
-    setSleepScore(calcSleepScore(data.duration,data.quality))
+  const handleSleepComplete = async (data) => {
+    const score = calcSleepScore(data.duration, data.quality)
+    try { await db.saveSleepCheckin({...data, score}) } catch(e) { console.error(e) }
+    setSleepScore(score)
     setSleepDone(true)
     setSleepSummary(data)
     setShowCheckin(false)
@@ -108,7 +132,26 @@ export default function App() {
     setPriorities(prev=>prev.map(p=>p.id===id?{...p,done:!p.done}:p))
   }
 
-  if (loading) return <div style={{minHeight:'100vh',background:'#0a0a0a'}}/>
+  const handleReset = () => {
+    localStorage.removeItem('humanOS_profile')
+    localStorage.removeItem('humanOS_userId')
+    setProfile(null)
+    setBloodScore(null)
+    setFinanceScore(65)
+    setFinanceData(null)
+    setSleepDone(false)
+    setSleepScore(48)
+  }
+
+  if (loading) return (
+    <div style={{minHeight:'100vh',background:'#0a0a0a',display:'flex',alignItems:'center',justifyContent:'center'}}>
+      <div style={{textAlign:'center'}}>
+        <div style={{fontSize:'40px',marginBottom:'16px'}}>🧬</div>
+        <p style={{color:'#444',fontSize:'14px'}}>Chargement...</p>
+      </div>
+    </div>
+  )
+
   if (!profile) return <Onboarding onComplete={handleOnboardingComplete}/>
 
   const healthScore = bloodScore || profile.healthScore || 72
@@ -124,8 +167,28 @@ export default function App() {
   return (
     <div style={{minHeight:'100vh',background:'#0a0a0a',color:'white'}}>
       {showCheckin && <SleepCheckin onComplete={handleSleepComplete} onClose={()=>setShowCheckin(false)}/>}
-      {showBloodTest && <BloodTest onClose={()=>setShowBloodTest(false)} onSave={(values,score)=>{if(score)setBloodScore(score);setShowBloodTest(false)}}/>}
-      {showFinance && <FinanceModule onClose={()=>setShowFinance(false)} onSave={(data,score)=>{setFinanceData(data);setFinanceScore(score);setShowFinance(false)}} savedData={financeData}/>}
+      {showBloodTest && (
+        <BloodTest
+          onClose={()=>setShowBloodTest(false)}
+          onSave={async (values,score)=>{
+            try { await db.saveBloodTest(values,score) } catch(e) { console.error(e) }
+            if(score) setBloodScore(score)
+            setShowBloodTest(false)
+          }}
+        />
+      )}
+      {showFinance && (
+        <FinanceModule
+          onClose={()=>setShowFinance(false)}
+          savedData={financeData}
+          onSave={async (data,score)=>{
+            try { await db.saveFinance(data,score) } catch(e) { console.error(e) }
+            setFinanceData(data)
+            setFinanceScore(score)
+            setShowFinance(false)
+          }}
+        />
+      )}
 
       <div style={{maxWidth:'420px',margin:'0 auto',padding:'32px 20px'}}>
 
@@ -139,7 +202,7 @@ export default function App() {
           <p style={{margin:'8px 0 0',fontSize:'13px',color:'#555'}}>Score de vie du jour</p>
           <div style={{display:'flex',gap:'8px',marginTop:'10px',flexWrap:'wrap',justifyContent:'center'}}>
             <span style={{fontSize:'12px',padding:'4px 12px',borderRadius:'20px',background:'#1a1a1a',color:'#888'}}>↑ +3 pts vs hier</span>
-            <span style={{fontSize:'12px',padding:'4px 12px',borderRadius:'20px',background:'#1a1a1a',color:'#f97316'}}>⚠️ Fatigue détectée</span>
+            {sleepScore < 50 && <span style={{fontSize:'12px',padding:'4px 12px',borderRadius:'20px',background:'#1a1a1a',color:'#f97316'}}>⚠️ Fatigue détectée</span>}
           </div>
         </div>
 
@@ -153,12 +216,15 @@ export default function App() {
             <span style={{color:'#475569',fontSize:'18px'}}>›</span>
           </div>
         ) : (
-          <div style={{background:'#0f1a0f',border:'1px solid #166534',borderRadius:'16px',padding:'16px',marginBottom:'24px',display:'flex',alignItems:'center',gap:'12px'}}>
+          <div onClick={()=>setShowCheckin(true)} style={{background:'#0f1a0f',border:'1px solid #166534',borderRadius:'16px',padding:'16px',marginBottom:'24px',cursor:'pointer',display:'flex',alignItems:'center',gap:'12px'}}>
             <span style={{fontSize:'28px'}}>✅</span>
-            <div>
-              <p style={{margin:0,fontSize:'14px',fontWeight:'600',color:'white'}}>{minutesToDuration(sleepSummary?.duration||0)} enregistrées</p>
+            <div style={{flex:1}}>
+              <p style={{margin:0,fontSize:'14px',fontWeight:'600',color:'white'}}>
+                {sleepSummary ? minutesToDuration(sleepSummary.duration) : sleepScore+'/100'} enregistrées
+              </p>
               <p style={{margin:'2px 0 0',fontSize:'12px',color:'#4ade80'}}>Score sommeil → {sleepScore}/100</p>
             </div>
+            <span style={{color:'#166534',fontSize:'18px'}}>›</span>
           </div>
         )}
 
@@ -182,10 +248,10 @@ export default function App() {
           </div>
         </div>
 
-        <button onClick={()=>{localStorage.removeItem('humanOS_profile');setProfile(null)}}
-          style={{marginTop:'40px',background:'none',border:'none',color:'#333',fontSize:'12px',cursor:'pointer',width:'100%'}}>
+        <button onClick={handleReset} style={{marginTop:'40px',background:'none',border:'none',color:'#333',fontSize:'12px',cursor:'pointer',width:'100%'}}>
           Réinitialiser le profil
         </button>
+
       </div>
     </div>
   )
